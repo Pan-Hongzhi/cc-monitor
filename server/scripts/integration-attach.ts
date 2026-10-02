@@ -34,12 +34,28 @@ async function main(): Promise<number> {
   check('attach 后状态为 attached', session.state === 'attached', session.reason);
   check('收到了 TUI 画面', stripAnsi(text).includes('ccm-it'));
 
+  // 单行 ASCII：确认括号粘贴原样到达输入框
   const marker = 'ccm-it-paste-' + Date.now().toString(36);
   session.writeInput(composePaste(marker));
   await sleep(2500);
-  const logs = stripAnsi(await claude('logs', id));
+  let logs = stripAnsi(await claude('logs', id));
   check('括号粘贴的文字出现在输入框', logs.includes(marker));
   session.writeInput('\x7f'.repeat(marker.length));
+  await sleep(500);
+
+  // 两行中文：这是手机上最常见的输入，必须不乱码、不被当成两次提交
+  const suffix = Date.now().toString(36);
+  const line1 = '中文甲' + suffix;
+  const line2 = '中文乙' + suffix;
+  session.writeInput(composePaste(line1 + '\n' + line2));
+  await sleep(2500);
+  logs = stripAnsi(await claude('logs', id));
+  const bothLines = logs.includes(line1) && logs.includes(line2);
+  const placeholder = /Pasted text/i.test(logs);
+  check('两行中文括号粘贴到达输入框', bothLines || placeholder, bothLines ? '两行原文可见' : placeholder ? '显示为多行粘贴占位' : '两行都没找到');
+  check('输入框里没有乱码', !logs.includes('�'));
+  check('没有被当成提交（画面上没有出现助手回复）', !/esc to interrupt/i.test(logs));
+  session.writeInput('\x7f'.repeat(line1.length + line2.length + 2));
   await sleep(500);
 
   if (submit) {

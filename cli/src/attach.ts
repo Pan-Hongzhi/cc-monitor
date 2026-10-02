@@ -60,7 +60,8 @@ function setRaw(on: boolean): void {
 }
 
 function onStdin(buf: Buffer): void {
-  if (buf.length === 1 && buf[0] === 0x1d) { // Ctrl+]
+  // Ctrl+] 和 Ctrl+Z 都只退出本客户端；Ctrl+Z 不转发，否则会把监测器从会话上踢下来
+  if (buf.length === 1 && (buf[0] === 0x1d || buf[0] === 0x1a)) {
     setRaw(false);
     ws.close();
     return;
@@ -75,11 +76,16 @@ ws.on('open', () => {
   process.stdin.on('data', onStdin); // 连接建立后才开始读键盘，避免把按键发给未打开的连接
   process.stdin.resume();
   process.stdout.on('resize', sendResize);
-  process.stderr.write('[cc-monitor] 已连接，Ctrl+] 退出\r\n');
+  process.stderr.write('[cc-monitor] 已连接，Ctrl+] 或 Ctrl+Z 退出\r\n');
 });
 
 ws.on('message', (raw) => {
-  const f = JSON.parse(raw.toString()) as ServerFrame;
+  let f: ServerFrame;
+  try {
+    f = JSON.parse(raw.toString()) as ServerFrame;
+  } catch {
+    return;
+  }
   if (f.t === 'out' || f.t === 'replay') {
     process.stdout.write(Buffer.from((f as { d: string }).d, 'base64').toString('utf8'));
   } else if (f.t === 'state') {
