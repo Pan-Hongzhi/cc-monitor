@@ -1,0 +1,12 @@
+{
+  "name": "cc-monitor",
+  "private": true,
+  "workspaces": ["server", "web", "cli"],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "dev:server": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "start": "npm run start -w server"
+  }
+}
