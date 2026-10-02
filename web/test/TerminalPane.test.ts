@@ -1,22 +1,26 @@
 import { describe, it, expect, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 
-const terms: FakeTerm[] = [];
-class FakeTerm {
-  cols = 100;
-  rows = 30;
-  written: string[] = [];
-  resetCount = 0;
-  dataCb: ((d: string) => void) | null = null;
-  textarea = document.createElement('textarea');
-  constructor() { terms.push(this); }
-  loadAddon() {}
-  open(el: HTMLElement) { el.appendChild(this.textarea); }
-  write(d: string) { this.written.push(d); }
-  reset() { this.resetCount += 1; }
-  onData(cb: (d: string) => void) { this.dataCb = cb; }
-  dispose() {}
-}
+// vi.mock 会被提升到文件顶部，工厂里引用的对象必须用 vi.hoisted 定义
+const { terms, FakeTerm } = vi.hoisted(() => {
+  class FakeTerm {
+    cols = 100;
+    rows = 30;
+    written: string[] = [];
+    resetCount = 0;
+    dataCb: ((d: string) => void) | null = null;
+    textarea = document.createElement('textarea');
+    constructor() { terms.push(this); }
+    loadAddon() {}
+    open(el: HTMLElement) { el.appendChild(this.textarea); }
+    write(d: string) { this.written.push(d); }
+    reset() { this.resetCount += 1; }
+    onData(cb: (d: string) => void) { this.dataCb = cb; }
+    dispose() {}
+  }
+  const terms: FakeTerm[] = [];
+  return { terms, FakeTerm };
+});
 vi.mock('@xterm/xterm', () => ({ Terminal: FakeTerm }));
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit() { const t = terms.at(-1)!; t.cols = 40; t.rows = 20; } } }));
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}));
