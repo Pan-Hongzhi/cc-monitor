@@ -77,6 +77,16 @@ describe('AttachSession', () => {
     expect(ptys[0].writes).toEqual(['x', '\x1b', composePaste('你好\r\n世界'), '\r']);
   });
 
+  it('filters Ctrl+Z out of raw input so a client cannot detach the monitor by accident', () => {
+    const { s, ptys } = harness();
+    s.addClient(client('a', 120, 40).c);
+    ptys[0].emit('screen');
+    s.writeInput('a\x1ab');
+    s.writeInput('\x1a');
+    s.writeInput('\x1a\x1a');
+    expect(ptys[0].writes).toEqual(['ab']);
+  });
+
   it('holds input until first output plus a grace period, then flushes in order', async () => {
     const ptys: FakePty[] = [];
     const s = new AttachSession({ jobId: 'x', cwd: 'C:/p', factory: () => { const p = new FakePty(); ptys.push(p); return p; }, sleep: async () => {} });
@@ -88,9 +98,9 @@ describe('AttachSession', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(ptys[0].writes).toEqual([]); // 画面出来了但还在宽限期内
     await vi.advanceTimersByTimeAsync(600);
-    expect(ptys[0].writes).toEqual(['early1', '']);
+    expect(ptys[0].writes).toEqual(['early1', '\x1b']);
     s.writeInput('late');
-    expect(ptys[0].writes).toEqual(['early1', '', 'late']);
+    expect(ptys[0].writes).toEqual(['early1', '\x1b', 'late']);
   });
 
   it('follows the active client size with debounce and clamps small phones', async () => {
@@ -100,6 +110,7 @@ describe('AttachSession', () => {
     s.addClient(a.c);
     expect(spawns[0]).toMatchObject({ cols: 120, rows: 40 });
     s.addClient(b.c);
+    s.setActive('b');
     await vi.advanceTimersByTimeAsync(300);
     expect(ptys[0].resizes.at(-1)).toEqual([100, 30]);
     s.resizeClient('b', 40, 10);
@@ -109,6 +120,23 @@ describe('AttachSession', () => {
     s.resizeClient('a', 90, 50); // a 不是 active，不生效
     await vi.advanceTimersByTimeAsync(300);
     expect(s.size).toEqual({ cols: 80, rows: 24 });
+  });
+
+  it('a joining client does not take over the size until it asks', async () => {
+    const { s, ptys } = harness();
+    const a = client('a', 120, 40);
+    const b = client('b', 100, 30);
+    s.addClient(a.c);
+    s.addClient(b.c);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(s.size).toEqual({ cols: 120, rows: 40 });
+    expect(ptys[0].resizes).not.toContainEqual([100, 30]);
+    s.resizeClient('b', 90, 28); // 不是 active，仍不生效
+    await vi.advanceTimersByTimeAsync(300);
+    expect(s.size).toEqual({ cols: 120, rows: 40 });
+    s.setActive('b');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(s.size).toEqual({ cols: 90, rows: 28 });
   });
 
   it('nudges the size after a late client joins so the TUI redraws', async () => {
@@ -131,6 +159,21 @@ describe('AttachSession', () => {
     ptys[0].exit(0);
     expect(s.state).toBe('taken_over');
     expect(states(a.frames).at(-1)!.reason).toContain('本地');
+    s.reattach();
+    expect(spawns.length).toBe(2);
+    expect(s.state).toBe('attached');
+  });
+
+  it('does not respawn for a new client while taken over; only reattach() does', () => {
+    const { s, ptys, spawns } = harness();
+    s.addClient(client('a', 120, 40).c);
+    ptys[0].emit(TAKEOVER_MARKER);
+    ptys[0].exit(0);
+    expect(s.state).toBe('taken_over');
+    const b = client('b', 100, 30);
+    s.addClient(b.c);
+    expect(spawns.length).toBe(1);
+    expect(states(b.frames).at(-1)).toMatchObject({ attach: 'taken_over' });
     s.reattach();
     expect(spawns.length).toBe(2);
     expect(s.state).toBe('attached');

@@ -123,11 +123,17 @@ export class AttachSession extends EventEmitter {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
     }
-    this.activeId = c.id;
+    // 新客户端不抢尺寸：只有没有跟随对象时才接管，否则等它自己发 active/resize
+    if (this.activeId === null || !this.clients.has(this.activeId)) this.activeId = c.id;
     if (this.state === 'attached') {
       c.send({ t: 'replay', d: encodeB64(this.buffer.toString()) });
       this.scheduleResize();
       this.scheduleNudge();
+      c.send(this.stateFrame());
+      return;
+    }
+    if (this.state === 'taken_over') {
+      // 用户在本地明确接管了；新连接（包括手机自动重连）只报告状态，由用户点"接管回来"再抢回
       c.send(this.stateFrame());
       return;
     }
@@ -160,8 +166,11 @@ export class AttachSession extends EventEmitter {
     if (this.activeId === id) this.scheduleResize();
   }
 
-  writeInput(d: string): void {
+  writeInput(raw: string): void {
     if (this.state !== 'attached' || !this.pty) return;
+    // Ctrl+Z 会让 attach 进程脱离并把监测器踢下线，客户端的原始按键里一律过滤掉
+    const d = raw.includes(CTRL_Z) ? raw.split(CTRL_Z).join('') : raw;
+    if (d.length === 0) return;
     if (!this.inputReady) {
       if (this.pendingInputChars + d.length > PENDING_INPUT_MAX) return;
       this.pendingInput.push(d);
