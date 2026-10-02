@@ -3,11 +3,14 @@ import { mount } from '@vue/test-utils';
 import Composer from '../src/components/Composer.vue';
 
 describe('Composer', () => {
-  it('emits send with the text and clears the box', async () => {
+  it('emits send with the text and keeps it until the parent confirms with clear()', async () => {
     const w = mount(Composer);
     await w.find('textarea').setValue('帮我看看\n第二行');
     await w.find('[data-test="send"]').trigger('click');
     expect(w.emitted('send')).toEqual([['帮我看看\n第二行']]);
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('帮我看看\n第二行');
+    (w.vm as unknown as { clear: () => void }).clear();
+    await w.vm.$nextTick();
     expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('');
   });
   it('ignores blank text', async () => {

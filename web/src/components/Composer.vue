@@ -5,10 +5,14 @@ defineProps<{ disabled?: boolean }>();
 const emit = defineEmits<{ send: [text: string] }>();
 const text = ref('');
 
+// 不在这里清空：发送是否成功由父组件确认，失败时文字留在框里
 function send() {
   const t = text.value;
   if (t.trim().length === 0) return;
   emit('send', t);
+}
+
+function clear() {
   text.value = '';
 }
 
@@ -18,6 +22,8 @@ function onKeydown(e: KeyboardEvent) {
     send();
   }
 }
+
+defineExpose({ clear });
 </script>
 
 <template>

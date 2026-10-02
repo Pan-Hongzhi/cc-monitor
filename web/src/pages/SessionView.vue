@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import StatusBar from '../components/StatusBar.vue';
 import ChatPane from '../components/ChatPane.vue';
 import Composer from '../components/Composer.vue';
@@ -7,6 +7,7 @@ import QuickKeys from '../components/QuickKeys.vue';
 import TerminalPane from '../components/TerminalPane.vue';
 import { ReconnectingSocket, wsUrl, type SocketStatus } from '../lib/ws';
 import { decodeB64, encodeB64, type ChatMessage, type StateFrame } from '../lib/protocol';
+import { mergeMessages } from '../lib/chat';
 
 const props = defineProps<{ sessionId: string }>();
 const MIN_COLS = 80;
@@ -18,10 +19,12 @@ const socketStatus = ref<SocketStatus>('connecting');
 const banner = ref('');
 const errorText = ref('');
 const term = ref<InstanceType<typeof TerminalPane> | null>(null);
+const composer = ref<InstanceType<typeof Composer> | null>(null);
 let socket: ReconnectingSocket | null = null;
 let bannerTimer: ReturnType<typeof setTimeout> | null = null;
+let everOpened = false;
 
-const canInput = () => !!state.value && state.value.attachable && state.value.attach === 'attached';
+const canInput = computed(() => !!state.value && state.value.attachable && state.value.attach === 'attached' && socketStatus.value === 'open');
 
 function showBanner(text: string, autoHideMs = 0) {
   banner.value = text;
@@ -43,13 +46,16 @@ function onHook(event: string, data: Record<string, unknown>) {
 async function loadHistory() {
   try {
     const r = await fetch(`/api/sessions/${encodeURIComponent(props.sessionId)}/transcript?limit=200`);
-    if (r.ok) messages.value = (await r.json()) as ChatMessage[];
+    if (r.ok) messages.value = mergeMessages(messages.value, (await r.json()) as ChatMessage[]);
   } catch {
     /* 没有历史也能用 */
   }
 }
 
-function send(text: string) { socket?.send({ t: 'paste', text }); }
+function send(text: string) {
+  if (socket?.send({ t: 'paste', text })) composer.value?.clear();
+  else showBanner('网络未连接，内容已保留，恢复后再发送', 4000);
+}
 function sendKey(name: string) { socket?.send({ t: 'key', name }); }
 function onTermInput(d: string) { socket?.send({ t: 'in', d: encodeB64(d) }); }
 function onTermResize(cols: number, rows: number) { socket?.send({ t: 'resize', cols, rows }); }
@@ -68,12 +74,18 @@ async function switchTab(next: 'chat' | 'term') {
 onMounted(() => {
   void loadHistory();
   socket = new ReconnectingSocket(wsUrl(`/ws?sid=${encodeURIComponent(props.sessionId)}`));
-  socket.onStatus((s) => { socketStatus.value = s; });
+  socket.onStatus((s) => {
+    socketStatus.value = s;
+    if (s === 'open') {
+      if (everOpened) void loadHistory(); // 重连后补齐断线期间的消息
+      everOpened = true;
+    }
+  });
   socket.onFrame((f) => {
     switch (f.t) {
       case 'replay': term.value?.clear(); term.value?.write(decodeB64(f.d)); break;
       case 'out': term.value?.write(decodeB64(f.d)); break;
-      case 'chat': messages.value = messages.value.concat(f.messages); break;
+      case 'chat': messages.value = mergeMessages(messages.value, f.messages); break;
       case 'state': state.value = f; break;
       case 'hook': onHook(f.event, (f.data ?? {}) as Record<string, unknown>); break;
       case 'error': errorText.value = f.message; break;
@@ -105,10 +117,10 @@ onUnmounted(() => {
       <ChatPane v-show="tab === 'chat'" :messages="messages" empty-hint="发出第一条 prompt 后这里会显示对话" />
       <div v-show="tab === 'term'" class="termwrap">
         <TerminalPane ref="term" :min-cols="MIN_COLS" @input="onTermInput" @resize="onTermResize" @active="onTermActive" />
-        <QuickKeys :disabled="!canInput()" @key="sendKey" />
+        <QuickKeys :disabled="!canInput" @key="sendKey" />
       </div>
     </section>
-    <Composer :disabled="!canInput()" @send="send" />
+    <Composer ref="composer" :disabled="!canInput" @send="send" />
   </div>
 </template>
 

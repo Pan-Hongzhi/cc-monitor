@@ -3,18 +3,19 @@ import { mount, flushPromises } from '@vue/test-utils';
 import { defineComponent, h } from 'vue';
 
 type Frame = Record<string, unknown>;
-const sockets: { frame: ((f: Frame) => void) | null; status: ((s: string) => void) | null; sent: Frame[]; url: string }[] = [];
+const sockets: { frame: ((f: Frame) => void) | null; status: ((s: string) => void) | null; sent: Frame[]; url: string; sendOk: boolean }[] = [];
 vi.mock('../src/lib/ws', () => ({
   wsUrl: (p: string) => 'ws://test' + p,
   ReconnectingSocket: class {
     frame: ((f: Frame) => void) | null = null;
     status: ((s: string) => void) | null = null;
     sent: Frame[] = [];
+    sendOk = true;
     constructor(public url: string) { sockets.push(this); }
     onFrame(h: (f: Frame) => void) { this.frame = h; }
     onStatus(h: (s: string) => void) { this.status = h; }
     connect() {}
-    send(f: Frame) { this.sent.push(f); return true; }
+    send(f: Frame) { this.sent.push(f); return this.sendOk; }
     close() {}
   },
 }));
@@ -36,6 +37,8 @@ vi.mock('../src/components/TerminalPane.vue', () => ({
 import SessionView from '../src/pages/SessionView.vue';
 
 const history = [{ id: 'u1:0', ts: 1, role: 'user', kind: 'text', text: '历史消息' }];
+const attached = { t: 'state', attach: 'attached', status: 'idle', size: { cols: 80, rows: 24 }, unknownRecords: 0, attachable: true };
+const mountOptions = { props: { sessionId: 'sid-1' }, global: { stubs: { 'router-link': true } } };
 
 beforeEach(() => {
   sockets.length = 0;
@@ -45,30 +48,64 @@ beforeEach(() => {
 });
 
 describe('SessionView', () => {
-  it('loads history, connects to the session socket and appends chat frames', async () => {
-    const w = mount(SessionView, { props: { sessionId: 'sid-1' } });
+  it('loads history, connects to the session socket and appends chat frames without duplicates', async () => {
+    const w = mount(SessionView, mountOptions);
     await flushPromises();
     expect(sockets[0].url).toBe('ws://test/ws?sid=sid-1');
     expect(w.text()).toContain('历史消息');
     sockets[0].frame!({ t: 'chat', messages: [{ id: 'a1:0', ts: 2, role: 'assistant', kind: 'text', text: '回答' }] });
+    sockets[0].frame!({ t: 'chat', messages: [{ id: 'a1:0', ts: 2, role: 'assistant', kind: 'text', text: '回答' }] });
     await flushPromises();
     expect(w.text()).toContain('回答');
+    expect(w.findAll('.msg').length).toBe(2);
   });
   it('sends paste on composer send and key frames from quick keys', async () => {
-    const w = mount(SessionView, { props: { sessionId: 'sid-1' } });
+    const w = mount(SessionView, mountOptions);
     await flushPromises();
-    sockets[0].frame!({ t: 'state', attach: 'attached', status: 'idle', size: { cols: 80, rows: 24 }, unknownRecords: 0, attachable: true });
+    sockets[0].status!('open');
+    sockets[0].frame!(attached);
     await flushPromises();
     await w.find('textarea').setValue('你好');
     await w.find('[data-test="send"]').trigger('click');
     expect(sockets[0].sent).toContainEqual({ t: 'paste', text: '你好' });
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('');
     await w.find('[data-test="tab-term"]').trigger('click');
     await w.find('[data-key="esc"]').trigger('click');
     expect(sockets[0].sent).toContainEqual({ t: 'key', name: 'esc' });
     expect(sockets[0].sent).toContainEqual({ t: 'active' });
   });
+  it('keeps the prompt and warns when the socket cannot send, and disables input while disconnected', async () => {
+    const w = mount(SessionView, mountOptions);
+    await flushPromises();
+    sockets[0].status!('open');
+    sockets[0].frame!(attached);
+    await flushPromises();
+    sockets[0].sendOk = false;
+    await w.find('textarea').setValue('辛苦打的一段话');
+    await w.find('[data-test="send"]').trigger('click');
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('辛苦打的一段话');
+    expect(w.text()).toContain('内容已保留');
+    sockets[0].status!('closed');
+    await flushPromises();
+    expect(w.find('textarea').attributes('disabled')).toBeDefined();
+  });
+  it('reloads history after a reconnect and merges by id', async () => {
+    const w = mount(SessionView, mountOptions);
+    await flushPromises();
+    sockets[0].status!('open');
+    await flushPromises();
+    expect(vi.mocked(fetch).mock.calls.length).toBe(1);
+    sockets[0].frame!({ t: 'chat', messages: [{ id: 'a1:0', ts: 2, role: 'assistant', kind: 'text', text: '断线前的回答' }] });
+    sockets[0].status!('closed');
+    sockets[0].status!('open');
+    await flushPromises();
+    expect(vi.mocked(fetch).mock.calls.length).toBe(2);
+    expect(w.findAll('.msg').length).toBe(2);
+    expect(w.text()).toContain('历史消息');
+    expect(w.text()).toContain('断线前的回答');
+  });
   it('clears before replay, writes output, and sends attach on reattach', async () => {
-    const w = mount(SessionView, { props: { sessionId: 'sid-1' } });
+    const w = mount(SessionView, mountOptions);
     await flushPromises();
     sockets[0].frame!({ t: 'replay', d: 'aGk=' });
     sockets[0].frame!({ t: 'out', d: '5L2g5aW9' });
@@ -80,7 +117,7 @@ describe('SessionView', () => {
     expect(sockets[0].sent).toContainEqual({ t: 'attach' });
   });
   it('shows hook banners and disables input for read-only sessions', async () => {
-    const w = mount(SessionView, { props: { sessionId: 'sid-1' } });
+    const w = mount(SessionView, mountOptions);
     await flushPromises();
     sockets[0].frame!({ t: 'hook', event: 'PermissionRequest', data: { tool_name: 'Bash' } });
     await flushPromises();
