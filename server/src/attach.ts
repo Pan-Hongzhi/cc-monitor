@@ -35,6 +35,8 @@ export interface AttachOptions {
   idleDetachMs?: number;
   nudgeDelayMs?: number;
   resizeDebounceMs?: number;
+  /** attach 进程产出第一段画面后再等多久才开始转发输入；实测它启动约 1 秒内会丢弃按键 */
+  inputGraceMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -63,6 +65,7 @@ export class AttachSession extends EventEmitter {
   private readonly idleDetachMs: number;
   private readonly nudgeDelayMs: number;
   private readonly resizeDebounceMs: number;
+  private readonly inputGraceMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly buffer: RingBuffer;
   private pty: PtyLike | null = null;
@@ -71,9 +74,11 @@ export class AttachSession extends EventEmitter {
   private idleTimer: NodeJS.Timeout | null = null;
   private resizeTimer: NodeJS.Timeout | null = null;
   private nudgeTimer: NodeJS.Timeout | null = null;
+  private graceTimer: NodeJS.Timeout | null = null;
   private requestedDetach = false;
-  // attach 进程刚启动、还没连上守护进程时会丢弃收到的按键；收到第一段画面之前先把输入攒着
+  // attach 进程刚启动时会丢弃收到的按键：第一段画面出来之后再等 inputGraceMs，期间的输入先攒着
   private inputReady = false;
+  private seenOutput = false;
   private pendingInput: string[] = [];
   private pendingInputChars = 0;
   private extras: () => StateExtras = () => ({ status: 'unknown', unknownRecords: 0, attachable: true });
@@ -88,6 +93,7 @@ export class AttachSession extends EventEmitter {
     this.idleDetachMs = opts.idleDetachMs ?? 10 * 60_000;
     this.nudgeDelayMs = opts.nudgeDelayMs ?? 100;
     this.resizeDebounceMs = opts.resizeDebounceMs ?? 200;
+    this.inputGraceMs = opts.inputGraceMs ?? 1500;
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.buffer = new RingBuffer(opts.bufferChars ?? 512 * 1024);
     this.size = { cols: this.minCols, rows: this.minRows };
@@ -186,8 +192,8 @@ export class AttachSession extends EventEmitter {
   }
 
   dispose(): void {
-    for (const t of [this.idleTimer, this.resizeTimer, this.nudgeTimer]) if (t) clearTimeout(t);
-    this.idleTimer = this.resizeTimer = this.nudgeTimer = null;
+    for (const t of [this.idleTimer, this.resizeTimer, this.nudgeTimer, this.graceTimer]) if (t) clearTimeout(t);
+    this.idleTimer = this.resizeTimer = this.nudgeTimer = this.graceTimer = null;
     this.requestedDetach = true;
     this.pty?.kill();
     this.pty = null;
@@ -201,13 +207,29 @@ export class AttachSession extends EventEmitter {
     return { cols, rows };
   }
 
+  private resetInputGate(): void {
+    if (this.graceTimer) clearTimeout(this.graceTimer);
+    this.graceTimer = null;
+    this.inputReady = false;
+    this.seenOutput = false;
+    this.pendingInput = [];
+    this.pendingInputChars = 0;
+  }
+
+  private openInputGate(pty: PtyLike): void {
+    if (this.pty !== pty || this.inputReady) return;
+    this.inputReady = true;
+    const queued = this.pendingInput;
+    this.pendingInput = [];
+    this.pendingInputChars = 0;
+    for (const q of queued) pty.write(q);
+  }
+
   private spawn(): void {
     this.state = 'attaching';
     this.reason = undefined;
     this.requestedDetach = false;
-    this.inputReady = false;
-    this.pendingInput = [];
-    this.pendingInputChars = 0;
+    this.resetInputGate();
     this.size = this.clampedSize();
     this.buffer.clear();
     let pty: PtyLike;
@@ -230,21 +252,17 @@ export class AttachSession extends EventEmitter {
     this.buffer.push(d);
     const frame: ServerFrame = { t: 'out', d: encodeB64(d) };
     for (const c of this.clients.values()) c.send(frame);
-    if (!this.inputReady && this.pty === pty) {
-      this.inputReady = true;
-      const queued = this.pendingInput;
-      this.pendingInput = [];
-      this.pendingInputChars = 0;
-      for (const q of queued) pty.write(q);
+    if (!this.seenOutput && this.pty === pty) {
+      this.seenOutput = true;
+      if (this.inputGraceMs <= 0) this.openInputGate(pty);
+      else this.graceTimer = setTimeout(() => { this.graceTimer = null; this.openInputGate(pty); }, this.inputGraceMs);
     }
   }
 
   private onExit(pty: PtyLike, exitCode: number): void {
     if (this.pty !== pty) return; // 旧进程的迟到退出事件
     this.pty = null;
-    this.inputReady = false;
-    this.pendingInput = [];
-    this.pendingInputChars = 0;
+    this.resetInputGate();
     if (this.requestedDetach) {
       this.requestedDetach = false;
       this.state = 'detached';

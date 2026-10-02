@@ -27,7 +27,7 @@ function harness() {
     ptys.push(p);
     return p;
   };
-  const s = new AttachSession({ jobId: '49fbe6a0', cwd: 'C:/p', factory, sleep: async () => {} });
+  const s = new AttachSession({ jobId: '49fbe6a0', cwd: 'C:/p', factory, sleep: async () => {}, inputGraceMs: 0 });
   return { s, ptys, spawns, factory };
 }
 
@@ -77,13 +77,17 @@ describe('AttachSession', () => {
     expect(ptys[0].writes).toEqual(['x', '\x1b', composePaste('你好\r\n世界'), '\r']);
   });
 
-  it('holds input until the attach process has produced its first output, then flushes in order', () => {
-    const { s, ptys } = harness();
+  it('holds input until first output plus a grace period, then flushes in order', async () => {
+    const ptys: FakePty[] = [];
+    const s = new AttachSession({ jobId: 'x', cwd: 'C:/p', factory: () => { const p = new FakePty(); ptys.push(p); return p; }, sleep: async () => {} });
     s.addClient(client('a', 120, 40).c);
     s.writeInput('early1');
     s.sendKey('esc');
     expect(ptys[0].writes).toEqual([]);
     ptys[0].emit('screen');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(ptys[0].writes).toEqual([]); // 画面出来了但还在宽限期内
+    await vi.advanceTimersByTimeAsync(600);
     expect(ptys[0].writes).toEqual(['early1', '']);
     s.writeInput('late');
     expect(ptys[0].writes).toEqual(['early1', '', 'late']);
