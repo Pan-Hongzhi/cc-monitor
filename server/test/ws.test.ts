@@ -9,7 +9,7 @@ import { attachWebSocketServer, TranscriptHub } from '../src/ws.js';
 import { RegistryWatcher, type ProcessProbe } from '../src/registry.js';
 import { AttachManager, type PtyLike } from '../src/attach.js';
 import { composePaste } from '../src/paste.js';
-import { decodeB64, encodeB64, type ServerFrame, type SessionInfo } from '../src/protocol.js';
+import { decodeB64, encodeB64, type ServerFrame, type SessionInfo, type StateFrame } from '../src/protocol.js';
 
 const TOKEN = 'a'.repeat(32);
 const SID = '49fbe6a0-0e11-45fc-b89d-82bad4ea0be5';
@@ -34,22 +34,24 @@ async function boot() {
   mkdirSync(join(cfg, 'projects', 'C--Users-me-proj'), { recursive: true });
   const transcriptPath = join(cfg, 'projects', 'C--Users-me-proj', `${SID}.jsonl`);
   writeFileSync(transcriptPath, '');
-  writeFileSync(join(cfg, 'sessions', '13804.json'), JSON.stringify({
-    pid: 13804, sessionId: SID, cwd, startedAt: 1, kind: 'bg', jobId: '49fbe6a0', name: 'bg-one', status: 'idle',
+  const sessionFile = join(cfg, 'sessions', '13804.json');
+  const writeSession = (status: string) => writeFileSync(sessionFile, JSON.stringify({
+    pid: 13804, sessionId: SID, cwd, startedAt: 1, kind: 'bg', jobId: '49fbe6a0', name: 'bg-one', status,
   }));
+  writeSession('idle');
   const probe: ProcessProbe = { probe: async () => ({ found: true, imageName: 'claude.exe' }) };
   const registry = new RegistryWatcher(join(cfg, 'sessions'), probe, 60_000);
   await registry.refresh();
   const ptys: FakePty[] = [];
   const attach = new AttachManager(() => { const p = new FakePty(); ptys.push(p); return p; }, { sleep: async () => {}, inputGraceMs: 0 });
-  const transcripts = new TranscriptHub(cfg, 60_000);
+  const transcripts = new TranscriptHub(cfg, 60_000, 200);
   const hookBus = new EventEmitter();
   const server = createServer((_req, res) => { res.statusCode = 404; res.end(); });
   attachWebSocketServer(server, { token: TOKEN, registry, attach, transcripts, hookBus });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   servers.push(server);
   const port = (server.address() as { port: number }).port;
-  return { port, ptys, attach, hookBus, transcriptPath, registry, transcripts };
+  return { port, ptys, attach, hookBus, transcriptPath, registry, transcripts, writeSession, cwd };
 }
 
 function connect(port: number, query: string, cookie = `ccm=${TOKEN}`) {
@@ -62,6 +64,8 @@ const until = async (cond: () => boolean, ms = 2000) => {
   const t0 = Date.now();
   while (!cond()) { if (Date.now() - t0 > ms) throw new Error('timeout'); await new Promise((r) => setTimeout(r, 10)); }
 };
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const states = (frames: ServerFrame[]) => frames.filter((f): f is StateFrame => f.t === 'state');
 
 describe('WebSocket server', () => {
   it('rejects upgrades without a valid token', async () => {
@@ -129,6 +133,32 @@ describe('WebSocket server', () => {
     ws.close();
   });
 
+  it('cleans up when the client disconnects while the session is still being prepared', async () => {
+    const { port, attach, transcripts } = await boot();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?sid=${SID}`, { headers: { cookie: `ccm=${TOKEN}` } });
+    ws.on('open', () => ws.close());
+    await sleep(500);
+    const s = attach.peek('49fbe6a0');
+    expect(!s || s.clientCount() === 0).toBe(true);
+    await until(() => transcripts.size() === 0, 3000);
+  });
+
+  it('keeps busy/idle live for the remaining client after another client disconnects', async () => {
+    const { port, attach, registry, writeSession } = await boot();
+    const a = connect(port, `sid=${SID}`);
+    await until(() => states(a.frames).length > 0);
+    const b = connect(port, `sid=${SID}`);
+    await until(() => states(b.frames).length > 0);
+    b.ws.close();
+    await until(() => attach.peek('49fbe6a0')!.clientCount() === 1);
+    const before = a.frames.length;
+    writeSession('busy');
+    await registry.refresh();
+    await until(() => a.frames.length > before);
+    expect(states(a.frames).at(-1)!.status).toBe('busy');
+    a.ws.close();
+  });
+
   it('answers unknown sessions with an error frame', async () => {
     const { port } = await boot();
     const { ws, frames } = connect(port, 'sid=nope');
@@ -147,5 +177,27 @@ describe('TranscriptHub', () => {
     expect(h.map((m) => m.text)).toEqual(['历史']);
     expect(await transcripts.getTailer(info)).toBe(await transcripts.getTailer(info));
     transcripts.stopAll();
+  });
+
+  it('creates a single tailer even when two callers race', async () => {
+    const { transcripts } = await boot();
+    const info = { sessionId: SID, cwd: 'C:/Users/me/proj' } as SessionInfo;
+    const [x, y] = await Promise.all([transcripts.getTailer(info), transcripts.getTailer(info)]);
+    expect(x).toBe(y);
+    expect(transcripts.size()).toBe(1);
+    transcripts.stopAll();
+  });
+
+  it('recycles a tailer nobody subscribes to after the idle period', async () => {
+    const { transcripts } = await boot();
+    const info = { sessionId: SID, cwd: 'C:/Users/me/proj' } as SessionInfo;
+    await transcripts.history(info, 10);
+    expect(transcripts.size()).toBe(1);
+    await until(() => transcripts.size() === 0, 3000);
+    const unsubscribe = await transcripts.subscribe(info, () => {});
+    await sleep(400);
+    expect(transcripts.size()).toBe(1); // 有订阅者就不回收
+    unsubscribe();
+    await until(() => transcripts.size() === 0, 3000);
   });
 });

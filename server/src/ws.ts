@@ -10,41 +10,71 @@ import { TranscriptTailer, locateTranscript, defaultTranscriptPath, type ParseSt
 import { decodeB64, type ChatMessage, type ClientFrame, type ServerFrame, type SessionInfo, type StateFrame } from './protocol.js';
 import type { HookEvent } from './hooks.js';
 
+interface HubEntry {
+  tailer: TranscriptTailer | null;
+  refs: number;
+  starting: Promise<TranscriptTailer>;
+  idleTimer: NodeJS.Timeout | null;
+}
+
 export class TranscriptHub {
-  private tailers = new Map<string, { tailer: TranscriptTailer; refs: number; starting: Promise<void> }>();
+  private tailers = new Map<string, HubEntry>();
 
-  constructor(private readonly configDir: string, private readonly pollMs = 500) {}
+  constructor(
+    private readonly configDir: string,
+    private readonly pollMs = 500,
+    private readonly idleStopMs = 60_000,
+  ) {}
 
-  async getTailer(info: SessionInfo): Promise<TranscriptTailer> {
+  size(): number {
+    return this.tailers.size;
+  }
+
+  getTailer(info: SessionInfo): Promise<TranscriptTailer> {
     let entry = this.tailers.get(info.sessionId);
     if (!entry) {
-      const path = (await locateTranscript(this.configDir, info.cwd, info.sessionId))
-        ?? defaultTranscriptPath(this.configDir, info.cwd, info.sessionId);
-      const tailer = new TranscriptTailer(path, this.pollMs);
-      entry = { tailer, refs: 0, starting: tailer.start() };
-      this.tailers.set(info.sessionId, entry);
+      // 先占位再做异步定位，并发调用共用同一个 starting，不会各建一个尾随器
+      const e: HubEntry = { tailer: null, refs: 0, idleTimer: null, starting: Promise.resolve(null as unknown as TranscriptTailer) };
+      e.starting = (async () => {
+        const path = (await locateTranscript(this.configDir, info.cwd, info.sessionId))
+          ?? defaultTranscriptPath(this.configDir, info.cwd, info.sessionId);
+        const tailer = new TranscriptTailer(path, this.pollMs);
+        await tailer.start();
+        e.tailer = tailer;
+        this.scheduleIdle(info.sessionId);
+        return tailer;
+      })();
+      e.starting.catch(() => {
+        if (this.tailers.get(info.sessionId) === e) this.tailers.delete(info.sessionId);
+      });
+      this.tailers.set(info.sessionId, e);
+      entry = e;
     }
-    await entry.starting;
-    return entry.tailer;
+    return entry.starting;
   }
 
   async subscribe(info: SessionInfo, cb: (m: ChatMessage[]) => void): Promise<() => void> {
     const tailer = await this.getTailer(info);
-    const entry = this.tailers.get(info.sessionId)!;
+    const entry = this.tailers.get(info.sessionId);
+    if (!entry || entry.tailer !== tailer) return this.subscribe(info, cb); // 极少见：等待期间被回收，重来一次
     entry.refs += 1;
+    if (entry.idleTimer) {
+      clearTimeout(entry.idleTimer);
+      entry.idleTimer = null;
+    }
     tailer.on('messages', cb);
+    let done = false;
     return () => {
+      if (done) return;
+      done = true;
       tailer.off('messages', cb);
       entry.refs -= 1;
-      if (entry.refs <= 0) {
-        tailer.stop();
-        this.tailers.delete(info.sessionId);
-      }
+      if (entry.refs <= 0) this.scheduleIdle(info.sessionId);
     };
   }
 
   stats(sessionId: string): ParseStats {
-    return this.tailers.get(sessionId)?.tailer.stats ?? { unknown: 0, failed: 0 };
+    return this.tailers.get(sessionId)?.tailer?.stats ?? { unknown: 0, failed: 0 };
   }
 
   async history(info: SessionInfo, limit: number): Promise<ChatMessage[]> {
@@ -52,8 +82,25 @@ export class TranscriptHub {
   }
 
   stopAll(): void {
-    for (const e of this.tailers.values()) e.tailer.stop();
+    for (const e of this.tailers.values()) {
+      if (e.idleTimer) clearTimeout(e.idleTimer);
+      e.tailer?.stop();
+    }
     this.tailers.clear();
+  }
+
+  // 没有订阅者的尾随器过一会儿就停掉，既回收资源，也让手机短暂重连时不必重读整个转录
+  private scheduleIdle(sessionId: string): void {
+    const entry = this.tailers.get(sessionId);
+    if (!entry || entry.refs > 0) return;
+    if (entry.idleTimer) clearTimeout(entry.idleTimer);
+    entry.idleTimer = setTimeout(() => {
+      const cur = this.tailers.get(sessionId);
+      if (cur === entry && cur.refs <= 0) {
+        cur.tailer?.stop();
+        this.tailers.delete(sessionId);
+      }
+    }, this.idleStopMs);
   }
 }
 
@@ -117,17 +164,46 @@ function handleList(ws: WebSocket, deps: WsDeps): void {
 }
 
 async function handleSession(ws: WebSocket, sid: string, deps: WsDeps): Promise<void> {
-  let info = deps.registry.current().find((s) => s.sessionId === sid);
-  if (!info) {
+  const initial = deps.registry.current().find((s) => s.sessionId === sid);
+  if (!initial) {
     send(ws, { t: 'error', message: `找不到会话 ${sid}，它可能已经退出` });
     ws.close(4004);
     return;
   }
   const clientId = randomUUID();
   let session: AttachSession | null = null;
+  let closed = false;
+  let unsubscribeChat: (() => void) | null = null;
+  let listening = false;
 
-  // 先挂上消息处理器再做任何异步准备：客户端在连接打开的瞬间就可能发帧，
-  // 准备完成前到达的帧先排队，准备好后按顺序处理。
+  const currentInfo = () => deps.registry.current().find((s) => s.sessionId === sid) ?? initial;
+
+  const onHook = (ev: HookEvent) => {
+    if (ev.sessionId === sid) send(ws, { t: 'hook', event: ev.event, data: ev.data });
+  };
+  // 注册表变化只通知本连接；状态值由 extras 实时查注册表，不依赖任何连接的闭包
+  const onRegistryChange = () => {
+    if (session) send(ws, session.stateFrame());
+    else send(ws, readOnlyState(currentInfo(), deps));
+  };
+
+  // 关闭处理器必须在任何 await 之前挂上：客户端可能在准备期间就断开
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    session?.removeClient(clientId);
+    unsubscribeChat?.();
+    unsubscribeChat = null;
+    if (listening) {
+      deps.hookBus.off('hook', onHook);
+      deps.registry.off('change', onRegistryChange);
+      listening = false;
+    }
+  };
+  ws.on('close', cleanup);
+  ws.on('error', cleanup);
+
+  // 先挂上消息处理器再做任何异步准备：准备完成前到达的帧先排队，准备好后按顺序处理
   let ready = false;
   const pending: ClientFrame[] = [];
   const handle = (frame: ClientFrame) => {
@@ -153,25 +229,22 @@ async function handleSession(ws: WebSocket, sid: string, deps: WsDeps): Promise<
     else handle(frame);
   });
 
-  const unsubscribeChat = await deps.transcripts.subscribe(info, (messages) => send(ws, { t: 'chat', messages }));
-
-  const onHook = (ev: HookEvent) => {
-    if (ev.sessionId === sid) send(ws, { t: 'hook', event: ev.event, data: ev.data });
-  };
+  const unsubscribe = await deps.transcripts.subscribe(initial, (messages) => send(ws, { t: 'chat', messages }));
+  if (closed || ws.readyState !== WebSocket.OPEN) {
+    unsubscribe();
+    cleanup();
+    return;
+  }
+  unsubscribeChat = unsubscribe;
   deps.hookBus.on('hook', onHook);
-
-  const onRegistryChange = (list: SessionInfo[]) => {
-    const next = list.find((s) => s.sessionId === sid);
-    if (next) info = next;
-    if (session) session.broadcastState();
-    else send(ws, readOnlyState(info!, deps));
-  };
   deps.registry.on('change', onRegistryChange);
+  listening = true;
 
+  const info = currentInfo();
   if (info.attachable && info.jobId) {
     session = deps.attach.get(info.jobId, info.cwd);
     session.setStateExtras(() => ({
-      status: info!.status,
+      status: deps.registry.current().find((s) => s.sessionId === sid)?.status ?? 'unknown',
       unknownRecords: deps.transcripts.stats(sid).unknown,
       attachable: true,
     }));
@@ -184,13 +257,6 @@ async function handleSession(ws: WebSocket, sid: string, deps: WsDeps): Promise<
   ready = true;
   for (const f of pending) handle(f);
   pending.length = 0;
-
-  ws.on('close', () => {
-    session?.removeClient(clientId);
-    unsubscribeChat();
-    deps.hookBus.off('hook', onHook);
-    deps.registry.off('change', onRegistryChange);
-  });
 }
 
 function readOnlyState(info: SessionInfo, deps: WsDeps): StateFrame {
