@@ -41,10 +41,7 @@ export function parseTranscriptLine(line: string, stats: ParseStats): ChatMessag
     return [];
   }
   const type = rec.type;
-  if (type !== 'user' && type !== 'assistant') {
-    stats.unknown += 1;
-    return [];
-  }
+  if (type !== 'user' && type !== 'assistant') return []; // attachment、mode 等记录是正常噪音，不计数
   if (rec.isMeta === true || rec.isSidechain === true) return [];
   const message = rec.message as Record<string, unknown> | undefined;
   if (!message || message.content === undefined) {

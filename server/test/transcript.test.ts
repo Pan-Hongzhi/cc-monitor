@@ -65,12 +65,12 @@ describe('parseTranscriptLine', () => {
     expect(summary.length).toBe(200);
     expect(summary).not.toContain('\n');
   });
-  it('counts unknown record types and failed lines', () => {
+  it('ignores other record types, counts malformed user/assistant records and failed lines', () => {
     const s = fresh();
     expect(parseTranscriptLine(snapshot, s)).toEqual([]);
     expect(parseTranscriptLine('{not json', s)).toEqual([]);
     expect(parseTranscriptLine(line({ type: 'assistant', uuid: 'a6' }), s)).toEqual([]);
-    expect(s).toEqual({ unknown: 2, failed: 1 });
+    expect(s).toEqual({ unknown: 1, failed: 1 });
   });
 });
 
