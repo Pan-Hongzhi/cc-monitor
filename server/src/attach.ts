@@ -40,6 +40,7 @@ export interface AttachOptions {
 
 export const TAKEOVER_MARKER = 'Session opened in another window';
 const CTRL_Z = '\x1a';
+const PENDING_INPUT_MAX = 64 * 1024;
 
 export function stripAnsi(s: string): string {
   return s
@@ -71,6 +72,10 @@ export class AttachSession extends EventEmitter {
   private resizeTimer: NodeJS.Timeout | null = null;
   private nudgeTimer: NodeJS.Timeout | null = null;
   private requestedDetach = false;
+  // attach 进程刚启动、还没连上守护进程时会丢弃收到的按键；收到第一段画面之前先把输入攒着
+  private inputReady = false;
+  private pendingInput: string[] = [];
+  private pendingInputChars = 0;
   private extras: () => StateExtras = () => ({ status: 'unknown', unknownRecords: 0, attachable: true });
 
   constructor(opts: AttachOptions) {
@@ -151,6 +156,12 @@ export class AttachSession extends EventEmitter {
 
   writeInput(d: string): void {
     if (this.state !== 'attached' || !this.pty) return;
+    if (!this.inputReady) {
+      if (this.pendingInputChars + d.length > PENDING_INPUT_MAX) return;
+      this.pendingInput.push(d);
+      this.pendingInputChars += d.length;
+      return;
+    }
     this.pty.write(d);
   }
 
@@ -194,6 +205,9 @@ export class AttachSession extends EventEmitter {
     this.state = 'attaching';
     this.reason = undefined;
     this.requestedDetach = false;
+    this.inputReady = false;
+    this.pendingInput = [];
+    this.pendingInputChars = 0;
     this.size = this.clampedSize();
     this.buffer.clear();
     let pty: PtyLike;
@@ -206,21 +220,31 @@ export class AttachSession extends EventEmitter {
       return;
     }
     this.pty = pty;
-    pty.onData((d) => this.onData(d));
+    pty.onData((d) => this.onData(pty, d));
     pty.onExit((e) => this.onExit(pty, e.exitCode));
     this.state = 'attached';
     this.broadcastState();
   }
 
-  private onData(d: string): void {
+  private onData(pty: PtyLike, d: string): void {
     this.buffer.push(d);
     const frame: ServerFrame = { t: 'out', d: encodeB64(d) };
     for (const c of this.clients.values()) c.send(frame);
+    if (!this.inputReady && this.pty === pty) {
+      this.inputReady = true;
+      const queued = this.pendingInput;
+      this.pendingInput = [];
+      this.pendingInputChars = 0;
+      for (const q of queued) pty.write(q);
+    }
   }
 
   private onExit(pty: PtyLike, exitCode: number): void {
     if (this.pty !== pty) return; // 旧进程的迟到退出事件
     this.pty = null;
+    this.inputReady = false;
+    this.pendingInput = [];
+    this.pendingInputChars = 0;
     if (this.requestedDetach) {
       this.requestedDetach = false;
       this.state = 'detached';

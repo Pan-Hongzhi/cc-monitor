@@ -69,11 +69,24 @@ describe('AttachSession', () => {
   it('writes input, maps keys, refuses ctrl-z, and pastes with CR', async () => {
     const { s, ptys } = harness();
     s.addClient(client('a', 120, 40).c);
+    ptys[0].emit('screen');
     s.writeInput('x');
     s.sendKey('esc');
     s.sendKey('ctrl-z');
     await s.paste('你好\r\n世界');
     expect(ptys[0].writes).toEqual(['x', '\x1b', composePaste('你好\r\n世界'), '\r']);
+  });
+
+  it('holds input until the attach process has produced its first output, then flushes in order', () => {
+    const { s, ptys } = harness();
+    s.addClient(client('a', 120, 40).c);
+    s.writeInput('early1');
+    s.sendKey('esc');
+    expect(ptys[0].writes).toEqual([]);
+    ptys[0].emit('screen');
+    expect(ptys[0].writes).toEqual(['early1', '']);
+    s.writeInput('late');
+    expect(ptys[0].writes).toEqual(['early1', '', 'late']);
   });
 
   it('follows the active client size with debounce and clamps small phones', async () => {
@@ -135,6 +148,7 @@ describe('AttachSession', () => {
   it('treats exit after detach() as a clean detach', () => {
     const { s, ptys } = harness();
     s.addClient(client('a', 120, 40).c);
+    ptys[0].emit('screen');
     s.detach();
     expect(ptys[0].writes).toEqual(['\x1a']);
     ptys[0].exit(0);
@@ -145,6 +159,7 @@ describe('AttachSession', () => {
   it('detaches after the last client has been gone for the idle period, unless someone returns', async () => {
     const { s, ptys } = harness();
     s.addClient(client('a', 120, 40).c);
+    ptys[0].emit('screen');
     s.removeClient('a');
     await vi.advanceTimersByTimeAsync(5 * 60_000);
     expect(ptys[0].writes).toEqual([]);
