@@ -41,7 +41,7 @@ async function boot() {
   const registry = new RegistryWatcher(join(cfg, 'sessions'), probe, 60_000);
   await registry.refresh();
   const ptys: FakePty[] = [];
-  const attach = new AttachManager(() => { const p = new FakePty(); ptys.push(p); return p; }, { sleep: async () => {} });
+  const attach = new AttachManager(() => { const p = new FakePty(); ptys.push(p); return p; }, { sleep: async () => {}, inputGraceMs: 0 });
   const transcripts = new TranscriptHub(cfg, 60_000);
   const hookBus = new EventEmitter();
   const server = createServer((_req, res) => { res.statusCode = 404; res.end(); });
@@ -122,7 +122,9 @@ describe('WebSocket server', () => {
       ws.send(JSON.stringify({ t: 'active' }));
       ws.send(JSON.stringify({ t: 'in', d: encodeB64('early') }));
     });
-    await until(() => ptys.length > 0 && ptys[0].writes.includes('early'));
+    await until(() => ptys.length > 0);
+    ptys[0].dataCb!('screen'); // 有了第一段画面，输入闸门才会打开
+    await until(() => ptys[0].writes.includes('early'));
     expect(ptys[0].writes).toContain('early');
     ws.close();
   });
