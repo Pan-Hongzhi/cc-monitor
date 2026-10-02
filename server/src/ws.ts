@@ -126,6 +126,33 @@ async function handleSession(ws: WebSocket, sid: string, deps: WsDeps): Promise<
   const clientId = randomUUID();
   let session: AttachSession | null = null;
 
+  // 先挂上消息处理器再做任何异步准备：客户端在连接打开的瞬间就可能发帧，
+  // 准备完成前到达的帧先排队，准备好后按顺序处理。
+  let ready = false;
+  const pending: ClientFrame[] = [];
+  const handle = (frame: ClientFrame) => {
+    if (!session) return;
+    switch (frame.t) {
+      case 'in': session.writeInput(decodeB64(frame.d)); break;
+      case 'paste': void session.paste(frame.text); break;
+      case 'key': session.sendKey(frame.name); break;
+      case 'resize': session.resizeClient(clientId, frame.cols, frame.rows); break;
+      case 'active': session.setActive(clientId); break;
+      case 'attach': session.reattach(); break;
+      default: break;
+    }
+  };
+  ws.on('message', (raw) => {
+    let frame: ClientFrame;
+    try {
+      frame = JSON.parse(raw.toString()) as ClientFrame;
+    } catch {
+      return;
+    }
+    if (!ready) pending.push(frame);
+    else handle(frame);
+  });
+
   const unsubscribeChat = await deps.transcripts.subscribe(info, (messages) => send(ws, { t: 'chat', messages }));
 
   const onHook = (ev: HookEvent) => {
@@ -154,24 +181,9 @@ async function handleSession(ws: WebSocket, sid: string, deps: WsDeps): Promise<
     send(ws, readOnlyState(info, deps));
   }
 
-  ws.on('message', (raw) => {
-    let frame: ClientFrame;
-    try {
-      frame = JSON.parse(raw.toString()) as ClientFrame;
-    } catch {
-      return;
-    }
-    if (!session) return;
-    switch (frame.t) {
-      case 'in': session.writeInput(decodeB64(frame.d)); break;
-      case 'paste': void session.paste(frame.text); break;
-      case 'key': session.sendKey(frame.name); break;
-      case 'resize': session.resizeClient(clientId, frame.cols, frame.rows); break;
-      case 'active': session.setActive(clientId); break;
-      case 'attach': session.reattach(); break;
-      default: break;
-    }
-  });
+  ready = true;
+  for (const f of pending) handle(f);
+  pending.length = 0;
 
   ws.on('close', () => {
     session?.removeClient(clientId);

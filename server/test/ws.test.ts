@@ -115,6 +115,18 @@ describe('WebSocket server', () => {
     ws.close();
   });
 
+  it('does not lose input frames sent immediately after the socket opens', async () => {
+    const { port, ptys } = await boot();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?sid=${SID}`, { headers: { cookie: `ccm=${TOKEN}` } });
+    ws.on('open', () => {
+      ws.send(JSON.stringify({ t: 'active' }));
+      ws.send(JSON.stringify({ t: 'in', d: encodeB64('early') }));
+    });
+    await until(() => ptys.length > 0 && ptys[0].writes.includes('early'));
+    expect(ptys[0].writes).toContain('early');
+    ws.close();
+  });
+
   it('answers unknown sessions with an error frame', async () => {
     const { port } = await boot();
     const { ws, frames } = connect(port, 'sid=nope');
