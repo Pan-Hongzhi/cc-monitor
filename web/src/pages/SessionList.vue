@@ -36,35 +36,62 @@ onUnmounted(() => socket?.close());
 
 <template>
   <main class="list">
-    <h1>Claude Code 会话</h1>
-    <p v-if="error" class="error">{{ error }}</p>
-    <p v-else-if="loaded && sessions.length === 0" class="empty">没有正在运行的会话。用 <code>claude --bg</code> 启动一个后再回来。</p>
+    <header class="banner">
+      <pre class="logo" aria-hidden="true"> ▐▛███▛█
+▝▜█████▀</pre>
+      <div class="title">
+        <h1>Claude Code 会话</h1>
+        <p class="sub">本机正在运行的会话 · 用 <code>claude --bg</code> 启动的可以操控</p>
+      </div>
+    </header>
+    <p v-if="error" class="error">✗ {{ error }}</p>
+    <p v-else-if="loaded && sessions.length === 0" class="empty">没有正在运行的会话。在项目目录里运行 <code>claude --bg --name 名字</code> 启动一个。</p>
     <ul>
       <li v-for="s in sessions" :key="s.sessionId" data-test="session">
         <router-link :to="`/s/${s.sessionId}`">
-          <span class="dot" :class="s.status" />
+          <span class="caret">❯</span>
+          <span class="dot" :class="s.status">●</span>
           <span class="name">{{ s.name || s.sessionId.slice(0, 8) }}</span>
-          <span class="badge" v-if="!s.attachable">只读</span>
-          <span class="status">{{ statusText(s) }}</span>
+          <span class="badge" v-if="!s.attachable">[只读]</span>
+          <span class="status" :class="s.status">{{ statusText(s) }}</span>
           <span class="cwd">{{ s.cwd }}</span>
         </router-link>
       </li>
     </ul>
+    <p class="foot" v-if="sessions.length">⏵⏵ {{ sessions.length }} 个会话 · 列表自动刷新</p>
   </main>
 </template>
 
 <style scoped>
-.list { padding: 16px; max-width: 720px; margin: 0 auto; }
-h1 { font-size: 18px; margin: 0 0 12px; }
+.list { padding: 20px 16px 32px; max-width: 760px; margin: 0 auto; }
+.banner { display: flex; align-items: center; gap: 14px; padding-bottom: 14px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
+.logo { color: var(--orange); font-size: 13px; line-height: 1.1; }
+h1 { font-size: 15px; font-weight: 600; margin: 0; }
+.sub { margin: 2px 0 0; color: var(--dim); font-size: 12px; }
+code { color: var(--lavender); }
 ul { list-style: none; padding: 0; margin: 0; }
-li a { display: grid; grid-template-columns: 12px 1fr auto auto; grid-template-areas: "dot name badge status" "dot cwd cwd cwd"; gap: 4px 8px; align-items: center; padding: 12px; margin-bottom: 8px; border-radius: 10px; background: #1d1d1d; color: inherit; text-decoration: none; }
-.dot { grid-area: dot; width: 10px; height: 10px; border-radius: 50%; background: #666; }
-.dot.busy { background: #f0a030; }
-.dot.idle { background: #3cc26a; }
+li a {
+  display: grid;
+  grid-template-columns: 14px 14px 1fr auto auto;
+  grid-template-areas: "caret dot name badge status" "caret dot cwd cwd cwd";
+  column-gap: 8px;
+  align-items: baseline;
+  padding: 8px 6px;
+  color: inherit;
+  border-left: 2px solid transparent;
+}
+li a:hover { background: var(--bg-raised); border-left-color: var(--orange); }
+.caret { grid-area: caret; color: var(--orange); opacity: 0; }
+li a:hover .caret { opacity: 1; }
+.dot { grid-area: dot; color: var(--faint); font-size: 11px; }
+.dot.busy { color: var(--yellow); }
+.dot.idle { color: var(--green); }
 .name { grid-area: name; font-weight: 600; }
-.badge { grid-area: badge; font-size: 12px; padding: 1px 6px; border-radius: 6px; background: #444; }
-.status { grid-area: status; font-size: 13px; color: #aaa; }
-.cwd { grid-area: cwd; font-size: 12px; color: #888; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.error { color: #ff7b7b; }
-.empty { color: #aaa; }
+.badge { grid-area: badge; color: var(--faint); font-size: 12px; }
+.status { grid-area: status; color: var(--dim); font-size: 12px; }
+.status.busy { color: var(--yellow); }
+.cwd { grid-area: cwd; color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.error { color: var(--red); }
+.empty { color: var(--dim); }
+.foot { margin-top: 14px; color: var(--faint); font-size: 12px; }
 </style>

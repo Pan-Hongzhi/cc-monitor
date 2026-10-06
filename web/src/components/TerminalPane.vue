@@ -31,10 +31,16 @@ function refit() {
 onMounted(() => {
   term = new Terminal({
     fontSize: 13,
-    fontFamily: 'ui-monospace, Consolas, "Cascadia Mono", monospace',
+    fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, monospace',
     cursorBlink: true,
     scrollback: 2000,
-    theme: { background: '#111111' },
+    theme: {
+      background: '#0c0c0c',
+      foreground: '#e6e6e6',
+      cursor: '#d77757',
+      cursorAccent: '#0c0c0c',
+      selectionBackground: '#3a3a3a',
+    },
   });
   fit = new FitAddon();
   term.loadAddon(fit);
@@ -59,13 +65,13 @@ defineExpose({ write, clear, refit });
 
 <template>
   <div class="wrap">
-    <p v-if="narrow" class="hint">当前宽度不足 {{ minCols }} 列，画面会被压缩，横屏或放大浏览器后更清楚</p>
+    <p v-if="narrow" class="hint">⚠ 当前宽度不足 {{ minCols }} 列，画面会被压缩，横屏或放大浏览器后更清楚</p>
     <div ref="host" class="term" />
   </div>
 </template>
 
 <style scoped>
 .wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.hint { margin: 0; padding: 6px 12px; font-size: 12px; color: #f0a030; background: #1a1a1a; }
+.hint { margin: 0; padding: 4px 12px; font-size: 12px; color: var(--yellow); }
 .term { flex: 1; min-height: 0; padding: 4px; }
 </style>

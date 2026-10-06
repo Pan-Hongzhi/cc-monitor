@@ -20,6 +20,23 @@ describe('ChatPane', () => {
     expect(w.find('.msg.tool_use summary').text()).toContain('Bash');
     expect(w.find('.msg.tool_result').text()).toContain('total 8');
   });
+  it('uses Claude Code transcript markers', () => {
+    const w = mount(ChatPane, { props: { messages: [...msgs], emptyHint: '空' } });
+    expect(w.find('.msg.user.text .marker').text()).toBe('>');
+    expect(w.find('.msg.assistant.text .marker').text()).toBe('⏺');
+    expect(w.find('.msg.tool_use summary').text()).toContain('Bash(ls)');
+    expect(w.find('.msg.tool_result summary .marker').text()).toBe('⎿');
+    expect(w.find('.msg.thinking summary').text()).toContain('Thinking');
+  });
+  it('shows only the first lines of a long tool result until expanded', () => {
+    const long = { id: 'u9:0', ts: 9, role: 'user', kind: 'tool_result', text: 'l1\nl2\nl3\nl4\nl5\nl6' } as const;
+    const w = mount(ChatPane, { props: { messages: [long], emptyHint: '' } });
+    const summary = w.find('.msg.tool_result summary');
+    expect(summary.text()).toContain('l3');
+    expect(summary.text()).not.toContain('l4');
+    expect(summary.text()).toContain('+3 行');
+    expect(w.find('.msg.tool_result .rest').text()).toContain('l6');
+  });
   it('shows the empty hint without messages', () => {
     const w = mount(ChatPane, { props: { messages: [], emptyHint: '发出第一条 prompt 后这里会显示对话' } });
     expect(w.text()).toContain('发出第一条 prompt 后这里会显示对话');

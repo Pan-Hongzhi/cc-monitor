@@ -24,21 +24,26 @@ const formatWarning = computed(() => (props.state?.unknownRecords ?? 0) > 200);
 
 <template>
   <div class="bar">
+    <span class="chev">⏵⏵</span>
     <span class="net" v-if="socket !== 'open'">网络断开，重连中</span>
     <span class="attach" :class="state?.attach">{{ attachText }}</span>
-    <span class="status" v-if="statusText">{{ statusText }}</span>
-    <span class="size" v-if="state">{{ state.size.cols }}×{{ state.size.rows }}</span>
-    <button v-if="canReattach" data-test="reattach" @click="emit('reattach')">接管回来</button>
-    <span class="warn" v-if="formatWarning">转录格式可能已变化，聊天视图可能不完整</span>
+    <template v-if="statusText"><span class="sep">·</span><span class="status" :class="state?.status">{{ statusText }}</span></template>
+    <template v-if="state"><span class="sep">·</span><span class="size">{{ state.size.cols }}×{{ state.size.rows }}</span></template>
+    <button v-if="canReattach" data-test="reattach" class="key" @click="emit('reattach')">接管回来</button>
+    <span class="warn" v-if="formatWarning">⚠ 转录格式可能已变化，聊天视图可能不完整</span>
   </div>
 </template>
 
 <style scoped>
-.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; font-size: 13px; background: #1a1a1a; border-bottom: 1px solid #2a2a2a; }
-.net { color: #ff7b7b; }
-.attach.attached { color: #3cc26a; }
-.attach.taken_over, .attach.error { color: #f0a030; }
-.size { color: #777; }
-.warn { color: #f0a030; width: 100%; }
-button { padding: 4px 10px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: #eee; }
+.bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 12px; font-size: 12px; color: var(--dim); border-bottom: 1px solid var(--line); background: var(--bg); }
+.chev { color: var(--yellow); }
+.net { color: var(--red); }
+.attach.attached { color: var(--green); }
+.attach.attaching { color: var(--dim); }
+.attach.taken_over, .attach.error { color: var(--yellow); }
+.status.busy { color: var(--yellow); }
+.sep { color: var(--faint); }
+.size { color: var(--faint); }
+.key { margin-left: 4px; }
+.warn { color: var(--yellow); width: 100%; }
 </style>

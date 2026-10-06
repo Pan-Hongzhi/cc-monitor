@@ -27,15 +27,27 @@ defineExpose({ clear });
 </script>
 
 <template>
-  <div class="composer">
-    <textarea v-model="text" :disabled="disabled" rows="2" placeholder="输入 prompt，Ctrl+Enter 发送" @keydown="onKeydown" />
-    <button data-test="send" :disabled="disabled" @click="send">发送</button>
+  <div class="composer" :class="{ disabled }">
+    <div class="box">
+      <span class="prompt">❯</span>
+      <textarea v-model="text" :disabled="disabled" rows="2" :placeholder="disabled ? '当前不能输入' : '输入 prompt，支持多行'" @keydown="onKeydown" />
+    </div>
+    <div class="foot">
+      <span class="hint">Ctrl+Enter 发送</span>
+      <button data-test="send" class="key" :disabled="disabled" @click="send">发送</button>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.composer { display: flex; gap: 8px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: #1a1a1a; border-top: 1px solid #2a2a2a; }
-textarea { flex: 1; resize: none; border-radius: 8px; border: 1px solid #444; background: #111; color: #eee; padding: 8px; font: inherit; font-size: 16px; }
-button { padding: 0 16px; border-radius: 8px; border: none; background: #3b82f6; color: #fff; }
-button:disabled, textarea:disabled { opacity: 0.5; }
+.composer { padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); background: var(--bg); }
+.box { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.composer:focus-within .box { border-color: var(--orange); }
+.disabled .box { border-color: var(--line); }
+.prompt { color: var(--orange); padding-top: 1px; }
+.disabled .prompt { color: var(--faint); }
+textarea { flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; font-size: 15px; line-height: 1.5; padding: 0; }
+textarea::placeholder { color: var(--faint); }
+textarea:disabled { color: var(--faint); }
+.foot { display: flex; justify-content: space-between; align-items: center; padding-top: 4px; font-size: 12px; color: var(--faint); }
 </style>

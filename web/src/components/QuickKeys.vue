@@ -10,12 +10,12 @@ const keys: { name: string; label: string }[] = [
 
 <template>
   <div class="keys">
-    <button v-for="k in keys" :key="k.name" :data-key="k.name" :disabled="disabled" @click="emit('key', k.name)">{{ k.label }}</button>
+    <button v-for="k in keys" :key="k.name" :data-key="k.name" class="key" :disabled="disabled" @click="emit('key', k.name)">{{ k.label }}</button>
   </div>
 </template>
 
 <style scoped>
-.keys { display: flex; gap: 6px; overflow-x: auto; padding: 6px 12px; background: #1a1a1a; }
-button { flex: 0 0 auto; padding: 6px 10px; border-radius: 6px; border: 1px solid #444; background: #222; color: #eee; }
-button:disabled { opacity: 0.5; }
+.keys { display: flex; gap: 2px; overflow-x: auto; padding: 4px 10px; font-size: 12px; border-top: 1px solid var(--line); background: var(--bg); scrollbar-width: none; }
+.keys::-webkit-scrollbar { display: none; }
+.key { flex: 0 0 auto; }
 </style>

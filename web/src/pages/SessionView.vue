@@ -104,15 +104,15 @@ onUnmounted(() => {
 <template>
   <div class="page">
     <header>
-      <router-link to="/" class="back">‹ 会话</router-link>
+      <router-link to="/" class="back">← 会话</router-link>
       <nav class="tabs">
-        <button data-test="tab-chat" :class="{ on: tab === 'chat' }" @click="switchTab('chat')">聊天</button>
-        <button v-if="!state || state.attachable" data-test="tab-term" :class="{ on: tab === 'term' }" @click="switchTab('term')">终端</button>
+        <button data-test="tab-chat" class="key" :class="{ on: tab === 'chat' }" @click="switchTab('chat')">聊天</button>
+        <button v-if="!state || state.attachable" data-test="tab-term" class="key" :class="{ on: tab === 'term' }" @click="switchTab('term')">终端</button>
       </nav>
     </header>
     <StatusBar :state="state" :socket="socketStatus" @reattach="reattach" />
-    <p v-if="errorText" class="error">{{ errorText }}</p>
-    <p v-if="banner" class="banner" @click="banner = ''">{{ banner }}</p>
+    <p v-if="errorText" class="error">✗ {{ errorText }}</p>
+    <p v-if="banner" class="banner" @click="banner = ''">⚠ {{ banner }}</p>
     <section class="body">
       <ChatPane v-show="tab === 'chat'" :messages="messages" empty-hint="发出第一条 prompt 后这里会显示对话" />
       <div v-show="tab === 'term'" class="termwrap">
@@ -126,13 +126,15 @@ onUnmounted(() => {
 
 <style scoped>
 .page { display: flex; flex-direction: column; height: 100%; }
-header { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #1a1a1a; }
-.back { color: #9cc3ff; text-decoration: none; }
-.tabs { display: flex; gap: 6px; }
-.tabs button { padding: 4px 12px; border-radius: 6px; border: 1px solid #444; background: #222; color: #eee; }
-.tabs button.on { background: #3b82f6; border-color: #3b82f6; }
+header { display: flex; align-items: center; gap: 12px; padding: 8px 12px; font-size: 13px; }
+.back { color: var(--dim); }
+.back:hover { color: var(--lavender); }
+.tabs { display: flex; gap: 4px; }
+.tabs .key.on { color: var(--orange); }
+.tabs .key.on::before, .tabs .key.on::after { color: var(--orange); }
 .body { flex: 1; min-height: 0; }
 .termwrap { display: flex; flex-direction: column; height: 100%; }
-.error { margin: 0; padding: 8px 12px; color: #ff7b7b; }
-.banner { margin: 0; padding: 8px 12px; background: #4a3a10; color: #ffd27a; }
+.error { margin: 0; padding: 6px 12px; color: var(--red); font-size: 13px; }
+.banner { margin: 0; padding: 6px 12px; color: var(--yellow); font-size: 13px; cursor: pointer; animation: rise 140ms ease-out; }
+@keyframes rise { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
 </style>
