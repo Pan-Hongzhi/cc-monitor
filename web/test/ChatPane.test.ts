@@ -23,9 +23,9 @@ describe('ChatPane', () => {
   it('uses Claude Code transcript markers', () => {
     const w = mount(ChatPane, { props: { messages: [...msgs], emptyHint: '空' } });
     expect(w.find('.msg.user.text .marker').text()).toBe('>');
-    expect(w.find('.msg.assistant.text .marker').text()).toBe('⏺');
+    expect(w.find('.msg.assistant.text .marker').text()).toBe('●');
     expect(w.find('.msg.tool_use summary').text()).toContain('Bash(ls)');
-    expect(w.find('.msg.tool_result summary .marker').text()).toBe('⎿');
+    expect(w.find('.msg.tool_result summary .marker').text()).toBe('└');
     expect(w.find('.msg.thinking summary').text()).toContain('Thinking');
   });
   it('shows only the first lines of a long tool result until expanded', () => {

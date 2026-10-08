@@ -32,9 +32,9 @@ defineExpose({ stick });
         <span class="marker">&gt;</span>
         <pre class="body">{{ m.text }}</pre>
       </div>
-      <!-- 回答：⏺ 开头 -->
+      <!-- 回答：● 开头（Claude Code 用 ⏺，手机字体未必有，用 ● 代替） -->
       <div v-else-if="m.kind === 'text'" class="line">
-        <span class="marker">⏺</span>
+        <span class="marker">●</span>
         <pre class="body">{{ m.text }}</pre>
       </div>
       <details v-else-if="m.kind === 'thinking'">
@@ -42,12 +42,12 @@ defineExpose({ stick });
         <pre class="body dim italic">{{ m.text }}</pre>
       </details>
       <details v-else-if="m.kind === 'tool_use'">
-        <summary><span class="marker">⏺</span><span class="label">{{ toolLabel(m.tool?.name ?? 'tool', m.tool?.summary ?? '') }}</span></summary>
+        <summary><span class="marker">●</span><span class="label">{{ toolLabel(m.tool?.name ?? 'tool', m.tool?.summary ?? '') }}</span></summary>
         <pre class="body dim">{{ m.tool?.summary }}</pre>
       </details>
       <details v-else-if="m.kind === 'tool_result'" class="result">
         <summary>
-          <span class="marker dim">⎿</span>
+          <span class="marker dim">└</span>
           <pre class="body dim">{{ splitLines(m.text, HEAD_LINES).head }}</pre>
           <span class="more" v-if="splitLines(m.text, HEAD_LINES).hidden">… +{{ splitLines(m.text, HEAD_LINES).hidden }} 行</span>
         </summary>

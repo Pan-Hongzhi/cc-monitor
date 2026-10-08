@@ -37,8 +37,13 @@ onUnmounted(() => socket?.close());
 <template>
   <main class="list">
     <header class="banner">
-      <pre class="logo" aria-hidden="true"> ▐▛███▛█
-▝▜█████▀</pre>
+      <!-- Claude Code 终端 logo 的像素画：16×4 个半格，手机字体没有方块字符时也能画对 -->
+      <svg class="logo" viewBox="0 0 16 4" width="64" height="16" aria-hidden="true" fill="currentColor" shape-rendering="crispEdges">
+        <rect x="3" y="0" width="13" height="1" />
+        <rect x="3" y="1" width="2" height="1" /><rect x="6" y="1" width="7" height="1" /><rect x="14" y="1" width="2" height="1" />
+        <rect x="1" y="2" width="15" height="1" />
+        <rect x="3" y="3" width="11" height="1" />
+      </svg>
       <div class="title">
         <h1>Claude Code 会话</h1>
         <p class="sub">本机正在运行的会话 · 用 <code>claude --bg</code> 启动的可以操控</p>
@@ -65,7 +70,7 @@ onUnmounted(() => socket?.close());
 <style scoped>
 .list { padding: 20px 16px 32px; max-width: 760px; margin: 0 auto; }
 .banner { display: flex; align-items: center; gap: 14px; padding-bottom: 14px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
-.logo { color: var(--orange); font-size: 13px; line-height: 1.1; }
+.logo { color: var(--orange); flex: 0 0 auto; }
 h1 { font-size: 15px; font-weight: 600; margin: 0; }
 .sub { margin: 2px 0 0; color: var(--dim); font-size: 12px; }
 code { color: var(--lavender); }

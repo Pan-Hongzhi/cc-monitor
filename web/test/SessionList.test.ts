@@ -43,6 +43,13 @@ describe('SessionList', () => {
     expect(rows[1].text()).toContain('只读');
     expect(rows[0].find('a').attributes('href')).toBe('/s/s1');
   });
+  it('draws the logo as an SVG so phones without block glyphs render it the same', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => list })));
+    const w = mountPage();
+    await flushPromises();
+    expect(w.find('svg.logo').exists()).toBe(true);
+    expect(w.find('pre.logo').exists()).toBe(false);
+  });
   it('updates from the sessions frame and shows an empty state', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => list })));
     const w = mountPage();
