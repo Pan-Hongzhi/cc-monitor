@@ -18,6 +18,7 @@ const state = ref<StateFrame | null>(null);
 const socketStatus = ref<SocketStatus>('connecting');
 const banner = ref('');
 const errorText = ref('');
+const stopped = ref(false);
 const term = ref<InstanceType<typeof TerminalPane> | null>(null);
 const composer = ref<InstanceType<typeof Composer> | null>(null);
 let socket: ReconnectingSocket | null = null;
@@ -25,6 +26,7 @@ let bannerTimer: ReturnType<typeof setTimeout> | null = null;
 let everOpened = false;
 
 const canInput = computed(() => !!state.value && state.value.attachable && state.value.attach === 'attached' && socketStatus.value === 'open');
+const stoppable = computed(() => !!state.value && state.value.attachable && !stopped.value);
 
 function showBanner(text: string, autoHideMs = 0) {
   banner.value = text;
@@ -61,6 +63,21 @@ function onTermInput(d: string) { socket?.send({ t: 'in', d: encodeB64(d) }); }
 function onTermResize(cols: number, rows: number) { socket?.send({ t: 'resize', cols, rows }); }
 function onTermActive() { socket?.send({ t: 'active' }); }
 function reattach() { socket?.send({ t: 'attach' }); }
+
+async function stopSession() {
+  try {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(props.sessionId)}/stop`, { method: 'POST' });
+    if (r.ok) {
+      stopped.value = true;
+      showBanner('会话已停止，对话记录已保留，可在电脑上用 claude --bg --resume 继续');
+    } else {
+      const body = (await r.json().catch(() => ({ output: '' }))) as { output?: string };
+      showBanner(`停止失败：${body.output || `HTTP ${r.status}`}`, 6000);
+    }
+  } catch (e) {
+    showBanner(`停止失败：${(e as Error).message}`, 6000);
+  }
+}
 
 async function switchTab(next: 'chat' | 'term') {
   tab.value = next;
@@ -110,7 +127,7 @@ onUnmounted(() => {
         <button v-if="!state || state.attachable" data-test="tab-term" class="key" :class="{ on: tab === 'term' }" @click="switchTab('term')">终端</button>
       </nav>
     </header>
-    <StatusBar :state="state" :socket="socketStatus" @reattach="reattach" />
+    <StatusBar :state="state" :socket="socketStatus" :stoppable="stoppable" @reattach="reattach" @stop="stopSession" />
     <p v-if="errorText" class="error">✗ {{ errorText }}</p>
     <p v-if="banner" class="banner" @click="banner = ''">⚠ {{ banner }}</p>
     <section class="body">

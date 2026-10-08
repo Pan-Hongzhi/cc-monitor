@@ -1,8 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount } from '@vue/test-utils';
 import StatusBar from '../src/components/StatusBar.vue';
 
 const base = { t: 'state', status: 'idle', size: { cols: 80, rows: 24 }, unknownRecords: 0, attachable: true } as const;
+
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
 
 describe('StatusBar', () => {
   it('shows attached + busy', () => {
@@ -31,5 +34,23 @@ describe('StatusBar', () => {
     const w = mount(StatusBar, { props: { state: { ...base, attach: 'attached', unknownRecords: 500 }, socket: 'closed' } });
     expect(w.text()).toContain('重连中');
     expect(w.text()).toContain('转录格式可能已变化');
+  });
+  it('asks for a second tap before emitting stop, and forgets the first tap after a while', async () => {
+    const w = mount(StatusBar, { props: { state: { ...base, attach: 'attached' }, socket: 'open', stoppable: true } });
+    const btn = w.find('[data-test="stop"]');
+    expect(btn.text()).toContain('停止会话');
+    await btn.trigger('click');
+    expect(w.emitted('stop')).toBeUndefined();
+    expect(w.find('[data-test="stop"]').text()).toContain('确认');
+    await w.find('[data-test="stop"]').trigger('click');
+    expect(w.emitted('stop')).toHaveLength(1);
+    const w2 = mount(StatusBar, { props: { state: { ...base, attach: 'attached' }, socket: 'open', stoppable: true } });
+    await w2.find('[data-test="stop"]').trigger('click');
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(w2.find('[data-test="stop"]').text()).not.toContain('确认');
+  });
+  it('hides the stop button when the session cannot be stopped', () => {
+    const w = mount(StatusBar, { props: { state: { ...base, attach: 'attached' }, socket: 'open', stoppable: false } });
+    expect(w.find('[data-test="stop"]').exists()).toBe(false);
   });
 });

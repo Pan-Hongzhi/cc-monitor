@@ -179,6 +179,18 @@ describe('AttachSession', () => {
     expect(s.state).toBe('attached');
   });
 
+  it('treats the exit after expectExit() as a clean, explained detach', () => {
+    const { s, ptys } = harness();
+    const a = client('a', 120, 40);
+    s.addClient(a.c);
+    ptys[0].emit('screen');
+    s.expectExit('会话已停止');
+    ptys[0].exit(0);
+    expect(s.state).toBe('detached');
+    expect(s.reason).toBe('会话已停止');
+    expect(states(a.frames).at(-1)).toMatchObject({ attach: 'detached', reason: '会话已停止' });
+  });
+
   it('reports unexpected exits as error with exit code and output tail', () => {
     const { s, ptys } = harness();
     const a = client('a', 120, 40);

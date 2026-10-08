@@ -39,12 +39,22 @@ import SessionView from '../src/pages/SessionView.vue';
 const history = [{ id: 'u1:0', ts: 1, role: 'user', kind: 'text', text: '历史消息' }];
 const attached = { t: 'state', attach: 'attached', status: 'idle', size: { cols: 80, rows: 24 }, unknownRecords: 0, attachable: true };
 const mountOptions = { props: { sessionId: 'sid-1' }, global: { stubs: { 'router-link': true } } };
+const posts: { url: string; init?: RequestInit }[] = [];
+let stopOk = true;
 
 beforeEach(() => {
   sockets.length = 0;
   termWrites.length = 0;
   termClears = 0;
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => history })));
+  posts.length = 0;
+  stopOk = true;
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      posts.push({ url, init });
+      return { ok: stopOk, status: stopOk ? 200 : 502, json: async () => ({ ok: stopOk, output: stopOk ? 'stopped' : 'boom' }), text: async () => 'boom' };
+    }
+    return { ok: true, json: async () => history };
+  }));
 });
 
 describe('SessionView', () => {
@@ -125,5 +135,34 @@ describe('SessionView', () => {
     sockets[0].frame!({ t: 'state', attach: 'detached', status: 'idle', size: { cols: 80, rows: 24 }, unknownRecords: 0, attachable: false, reason: '只能查看' });
     await flushPromises();
     expect(w.find('textarea').attributes('disabled')).toBeDefined();
+    expect(w.find('[data-test="stop"]').exists()).toBe(false);
+  });
+  it('stops the session through the API after the second tap and tells the user', async () => {
+    const w = mount(SessionView, mountOptions);
+    await flushPromises();
+    sockets[0].status!('open');
+    sockets[0].frame!(attached);
+    await flushPromises();
+    await w.find('[data-test="stop"]').trigger('click');
+    expect(posts.length).toBe(0);
+    await w.find('[data-test="stop"]').trigger('click');
+    await flushPromises();
+    expect(posts.length).toBe(1);
+    expect(posts[0].url).toBe('/api/sessions/sid-1/stop');
+    expect(w.text()).toContain('会话已停止');
+    expect(w.find('[data-test="stop"]').exists()).toBe(false);
+  });
+  it('reports a failed stop without hiding the button', async () => {
+    stopOk = false;
+    const w = mount(SessionView, mountOptions);
+    await flushPromises();
+    sockets[0].status!('open');
+    sockets[0].frame!(attached);
+    await flushPromises();
+    await w.find('[data-test="stop"]').trigger('click');
+    await w.find('[data-test="stop"]').trigger('click');
+    await flushPromises();
+    expect(w.text()).toContain('停止失败');
+    expect(w.find('[data-test="stop"]').exists()).toBe(true);
   });
 });

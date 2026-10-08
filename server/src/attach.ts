@@ -76,6 +76,7 @@ export class AttachSession extends EventEmitter {
   private nudgeTimer: NodeJS.Timeout | null = null;
   private graceTimer: NodeJS.Timeout | null = null;
   private requestedDetach = false;
+  private expectedExitReason: string | null = null;
   // attach 进程刚启动时会丢弃收到的按键：第一段画面出来之后再等 inputGraceMs，期间的输入先攒着
   private inputReady = false;
   private seenOutput = false;
@@ -200,6 +201,11 @@ export class AttachSession extends EventEmitter {
     this.pty.write(CTRL_Z);
   }
 
+  /** 已知即将退出（例如用户从网页停止了会话）：退出时按给定原因报告为 detached，而不是 error */
+  expectExit(reason: string | null): void {
+    this.expectedExitReason = reason;
+  }
+
   dispose(): void {
     for (const t of [this.idleTimer, this.resizeTimer, this.nudgeTimer, this.graceTimer]) if (t) clearTimeout(t);
     this.idleTimer = this.resizeTimer = this.nudgeTimer = this.graceTimer = null;
@@ -238,6 +244,7 @@ export class AttachSession extends EventEmitter {
     this.state = 'attaching';
     this.reason = undefined;
     this.requestedDetach = false;
+    this.expectedExitReason = null;
     this.resetInputGate();
     this.size = this.clampedSize();
     this.buffer.clear();
@@ -272,7 +279,12 @@ export class AttachSession extends EventEmitter {
     if (this.pty !== pty) return; // 旧进程的迟到退出事件
     this.pty = null;
     this.resetInputGate();
-    if (this.requestedDetach) {
+    if (this.expectedExitReason) {
+      this.state = 'detached';
+      this.reason = this.expectedExitReason;
+      this.expectedExitReason = null;
+      this.requestedDetach = false;
+    } else if (this.requestedDetach) {
       this.requestedDetach = false;
       this.state = 'detached';
       this.reason = undefined;
