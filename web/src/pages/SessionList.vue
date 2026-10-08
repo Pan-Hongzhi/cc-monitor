@@ -37,12 +37,19 @@ onUnmounted(() => socket?.close());
 <template>
   <main class="list">
     <header class="banner">
-      <!-- Claude Code 终端 logo 的像素画：16×4 个半格，手机字体没有方块字符时也能画对 -->
-      <svg class="logo" viewBox="0 0 16 4" width="64" height="16" aria-hidden="true" fill="currentColor" shape-rendering="crispEdges">
+      <!-- Claude Code 启动画面里的吉祥物，按终端里三行半格字符逐格还原：18×6 个半格，含两只眼睛和四只脚 -->
+      <svg class="logo" viewBox="0 0 18 6" width="72" height="24" aria-hidden="true" fill="currentColor" shape-rendering="crispEdges">
         <rect x="3" y="0" width="13" height="1" />
-        <rect x="3" y="1" width="2" height="1" /><rect x="6" y="1" width="7" height="1" /><rect x="14" y="1" width="2" height="1" />
-        <rect x="1" y="2" width="15" height="1" />
-        <rect x="3" y="3" width="11" height="1" />
+        <rect x="3" y="1" width="2" height="1" />
+        <rect x="6" y="1" width="7" height="1" />
+        <rect x="14" y="1" width="2" height="1" />
+        <rect x="1" y="2" width="17" height="1" />
+        <rect x="3" y="3" width="13" height="1" />
+        <rect x="3" y="4" width="1" height="1" />
+        <rect x="5" y="4" width="1" height="1" />
+        <rect x="13" y="4" width="1" height="1" />
+        <rect x="15" y="4" width="1" height="1" />
+        <rect class="eye" x="5" y="1" width="1" height="1" /><rect class="eye" x="13" y="1" width="1" height="1" />
       </svg>
       <div class="title">
         <h1>Claude Code 会话</h1>
@@ -71,6 +78,7 @@ onUnmounted(() => socket?.close());
 .list { padding: 20px 16px 32px; max-width: 760px; margin: 0 auto; }
 .banner { display: flex; align-items: center; gap: 14px; padding-bottom: 14px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
 .logo { color: var(--orange); flex: 0 0 auto; }
+.logo .eye { fill: #000; }
 h1 { font-size: 15px; font-weight: 600; margin: 0; }
 .sub { margin: 2px 0 0; color: var(--dim); font-size: 12px; }
 code { color: var(--lavender); }
