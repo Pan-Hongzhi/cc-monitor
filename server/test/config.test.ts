@@ -32,7 +32,7 @@ describe('config', () => {
     expect(first.token).toMatch(/^[0-9a-f]{32}$/);
     expect(first.port).toBe(8787);
     expect(first.bind).toBe('0.0.0.0');
-    expect(first.minCols).toBe(80);
+    expect(first.minCols).toBe(40); // 手机约 50 列，让会话按手机宽度排版
     expect(first.idleDetachMinutes).toBe(10);
     const second = loadOrCreateConfig(path, env);
     expect(second.token).toBe(first.token);

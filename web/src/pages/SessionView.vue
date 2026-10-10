@@ -10,7 +10,7 @@ import { decodeB64, encodeB64, type ChatMessage, type StateFrame } from '../lib/
 import { mergeMessages } from '../lib/chat';
 
 const props = defineProps<{ sessionId: string }>();
-const MIN_COLS = 80;
+const MIN_COLS = 40;
 
 const tab = ref<'chat' | 'term'>('chat');
 const messages = ref<ChatMessage[]>([]);

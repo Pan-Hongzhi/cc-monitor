@@ -71,7 +71,7 @@ export function loadOrCreateConfig(path: string, env: NodeJS.ProcessEnv = proces
     port: Number.isFinite(envPort) && envPort > 0 ? envPort : num(file.port, 8787),
     bind: env.CCM_BIND && env.CCM_BIND.length > 0 ? env.CCM_BIND : (typeof file.bind === 'string' && file.bind ? file.bind : '0.0.0.0'),
     token: file.token,
-    minCols: num(file.minCols, 80),
+    minCols: num(file.minCols, 40), // 手机约 50 列；电脑客户端活跃时会自然变宽
     minRows: num(file.minRows, 24),
     idleDetachMinutes: num(file.idleDetachMinutes, 10),
     ringBufferKB: num(file.ringBufferKB, 512),

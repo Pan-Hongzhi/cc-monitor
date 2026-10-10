@@ -29,13 +29,25 @@ describe('ChatPane', () => {
     expect(w.find('.msg.thinking summary').text()).toContain('Thinking');
   });
   it('shows only the first lines of a long tool result until expanded', () => {
-    const long = { id: 'u9:0', ts: 9, role: 'user', kind: 'tool_result', text: 'l1\nl2\nl3\nl4\nl5\nl6' } as const;
+    const long = { id: 'u9:0', ts: 9, role: 'user', kind: 'tool_result', text: ['l1', 'l2', 'l3', 'l4', 'l5', 'l6'].join('\n') } as const;
     const w = mount(ChatPane, { props: { messages: [long], emptyHint: '' } });
     const summary = w.find('.msg.tool_result summary');
     expect(summary.text()).toContain('l3');
     expect(summary.text()).not.toContain('l4');
     expect(summary.text()).toContain('+3 行');
     expect(w.find('.msg.tool_result .rest').text()).toContain('l6');
+  });
+  it('renders assistant text as sanitized Markdown while keeping user prompts verbatim', () => {
+    const body = ['**加粗**', '', '| 编号 | ID |', '|---|---|', '| 1 | charger |', '', '<script>alert(1)</script>'].join('\n');
+    const md = { id: 'a7:0', ts: 7, role: 'assistant', kind: 'text', text: body } as const;
+    const user = { id: 'u7:0', ts: 8, role: 'user', kind: 'text', text: '**不要加粗** <b>x</b>' } as const;
+    const w = mount(ChatPane, { props: { messages: [md, user], emptyHint: '' } });
+    const a = w.find('.msg.assistant.text');
+    expect(a.find('strong').text()).toBe('加粗');
+    expect(a.find('table td').exists()).toBe(true);
+    expect(a.html()).not.toContain('<script');
+    expect(w.find('.msg.user.text').text()).toContain('**不要加粗** <b>x</b>');
+    expect(w.find('.msg.user.text b').exists()).toBe(false);
   });
   it('shows the empty hint without messages', () => {
     const w = mount(ChatPane, { props: { messages: [], emptyHint: '发出第一条 prompt 后这里会显示对话' } });

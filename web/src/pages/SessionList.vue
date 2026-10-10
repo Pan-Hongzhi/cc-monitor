@@ -53,7 +53,7 @@ onUnmounted(() => socket?.close());
       </svg>
       <div class="title">
         <h1>Claude Code 会话</h1>
-        <p class="sub">本机正在运行的会话 · 用 <code>claude --bg</code> 启动的可以操控</p>
+        <p class="sub">本机正在运行的会话</p>
       </div>
     </header>
     <p v-if="error" class="error">✗ {{ error }}</p>

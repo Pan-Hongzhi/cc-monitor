@@ -13,6 +13,11 @@ describe('Composer', () => {
     await w.vm.$nextTick();
     expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('');
   });
+  it('starts as a single line that grows with content', async () => {
+    const w = mount(Composer);
+    expect(w.find('textarea').attributes('rows')).toBe('1');
+  });
+
   it('ignores blank text', async () => {
     const w = mount(Composer);
     await w.find('textarea').setValue('   \n');

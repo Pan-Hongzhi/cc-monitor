@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import type { ChatMessage } from '../lib/protocol';
 import { toolLabel, splitLines } from '../lib/transcriptStyle';
 
@@ -7,6 +9,14 @@ const props = defineProps<{ messages: ChatMessage[]; emptyHint: string }>();
 const box = ref<HTMLElement | null>(null);
 const stick = ref(true);
 const HEAD_LINES = 3;
+
+marked.setOptions({ gfm: true, breaks: true });
+
+// 回答按 Markdown 渲染（表格、代码块、加粗、列表），输出经 DOMPurify 消毒；你的 prompt 原样显示
+function renderMarkdown(text: string): string {
+  const html = marked.parse(text, { async: false }) as string;
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+}
 
 function onScroll() {
   const el = box.value;
@@ -35,7 +45,7 @@ defineExpose({ stick });
       <!-- 回答：● 开头（Claude Code 用 ⏺，手机字体未必有，用 ● 代替） -->
       <div v-else-if="m.kind === 'text'" class="line">
         <span class="marker">●</span>
-        <pre class="body">{{ m.text }}</pre>
+        <div class="body md" v-html="renderMarkdown(m.text)" />
       </div>
       <details v-else-if="m.kind === 'thinking'">
         <summary><span class="marker dim">✻</span><span class="dim italic">Thinking…</span></summary>
@@ -82,4 +92,21 @@ summary::-webkit-details-marker { display: none; }
 details[open] > summary .more { display: none; }
 details > pre { margin: 2px 0 0 calc(1ch + 8px); }
 .empty { color: var(--dim); margin-top: 24px; }
+
+/* Markdown 正文：贴近终端里的渲染，表格窄屏可横向滑动 */
+.md :deep(p) { margin: 0 0 8px; }
+.md :deep(p:last-child) { margin-bottom: 0; }
+.md :deep(h1), .md :deep(h2), .md :deep(h3), .md :deep(h4) { font-size: inherit; font-weight: 600; margin: 10px 0 4px; color: var(--orange); }
+.md :deep(ul), .md :deep(ol) { margin: 0 0 8px; padding-left: 1.6em; }
+.md :deep(li) { margin: 2px 0; }
+.md :deep(code) { background: var(--bg-raised); padding: 1px 4px; border-radius: 3px; color: var(--lavender); }
+.md :deep(pre) { background: var(--bg-raised); border-left: 2px solid var(--line); padding: 8px 10px; margin: 6px 0 8px; overflow-x: auto; white-space: pre; }
+.md :deep(pre code) { background: none; padding: 0; color: var(--fg); }
+.md :deep(blockquote) { margin: 6px 0; padding-left: 10px; border-left: 2px solid var(--faint); color: var(--dim); }
+.md :deep(a) { color: var(--lavender); }
+.md :deep(hr) { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+.md :deep(table) { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 6px 0 8px; font-size: 13px; }
+.md :deep(th), .md :deep(td) { border: 1px solid var(--line); padding: 3px 8px; text-align: left; white-space: nowrap; }
+.md :deep(th) { color: var(--dim); font-weight: 600; background: var(--bg-raised); }
+.md :deep(strong) { color: var(--fg); }
 </style>
