@@ -84,6 +84,21 @@ describe('SessionView', () => {
     expect(sockets[0].sent).toContainEqual({ t: 'key', name: 'esc' });
     expect(sockets[0].sent).toContainEqual({ t: 'active' });
   });
+  it('switches to the terminal tab after sending a slash command, since its dialog only shows there', async () => {
+    const w = mount(SessionView, mountOptions);
+    await flushPromises();
+    sockets[0].status!('open');
+    sockets[0].frame!(attached);
+    await flushPromises();
+    expect(w.find('[data-test="tab-chat"]').classes()).toContain('on');
+    await w.find('textarea').setValue('/model');
+    await w.find('[data-test="send"]').trigger('click');
+    await flushPromises();
+    expect(sockets[0].sent).toContainEqual({ t: 'paste', text: '/model' });
+    expect(w.find('[data-test="tab-term"]').classes()).toContain('on');
+    expect(w.text()).toContain('终端画面');
+  });
+
   it('keeps the prompt and warns when the socket cannot send, and disables input while disconnected', async () => {
     const w = mount(SessionView, mountOptions);
     await flushPromises();

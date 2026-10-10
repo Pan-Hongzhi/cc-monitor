@@ -28,6 +28,25 @@ function refit() {
   emit('resize', term.cols, term.rows);
 }
 
+// 手机上没有滚轮：把手指的上下拖动换算成滚轮事件交给 xterm，
+// Claude Code 开着鼠标跟踪时会收到滚动序列并滚动自己的内容
+let lastTouchY: number | null = null;
+function onTouchStart(e: TouchEvent) {
+  lastTouchY = e.touches[0]?.clientY ?? null;
+}
+function onTouchMove(e: TouchEvent) {
+  const y = e.touches[0]?.clientY;
+  if (y === undefined || lastTouchY === null || !term?.element) return;
+  const dy = lastTouchY - y;
+  if (Math.abs(dy) < 4) return;
+  lastTouchY = y;
+  e.preventDefault();
+  term.element.dispatchEvent(new WheelEvent('wheel', { deltaY: dy * 2, deltaMode: 0, bubbles: true, cancelable: true }));
+}
+function onTouchEnd() {
+  lastTouchY = null;
+}
+
 onMounted(() => {
   term = new Terminal({
     fontSize: 13,
@@ -66,12 +85,12 @@ defineExpose({ write, clear, refit });
 <template>
   <div class="wrap">
     <p v-if="narrow" class="hint">⚠ 当前宽度不足 {{ minCols }} 列，画面会被压缩，横屏或放大浏览器后更清楚</p>
-    <div ref="host" class="term" />
+    <div ref="host" class="term" @touchstart.passive="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd" @touchcancel="onTouchEnd" />
   </div>
 </template>
 
 <style scoped>
 .wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .hint { margin: 0; padding: 4px 12px; font-size: 12px; color: var(--yellow); }
-.term { flex: 1; min-height: 0; padding: 4px; }
+.term { flex: 1; min-height: 0; padding: 4px; touch-action: none; }
 </style>

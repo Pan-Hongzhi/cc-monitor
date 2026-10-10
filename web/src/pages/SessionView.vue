@@ -55,8 +55,16 @@ async function loadHistory() {
 }
 
 function send(text: string) {
-  if (socket?.send({ t: 'paste', text })) composer.value?.clear();
-  else showBanner('网络未连接，内容已保留，恢复后再发送', 4000);
+  if (!socket?.send({ t: 'paste', text })) {
+    showBanner('网络未连接，内容已保留，恢复后再发送', 4000);
+    return;
+  }
+  composer.value?.clear();
+  if (text.trim().startsWith('/')) {
+    // 斜杠命令的菜单和对话框只在终端画面里显示，聊天视图看不到
+    void switchTab('term');
+    showBanner('斜杠命令的界面只在终端画面显示，已切换过去', 4000);
+  }
 }
 function sendKey(name: string) { socket?.send({ t: 'key', name }); }
 function onTermInput(d: string) { socket?.send({ t: 'in', d: encodeB64(d) }); }

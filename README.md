@@ -8,6 +8,7 @@
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0C0C0F">
   <img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A5%2024-3C873A">
   <img alt="Built with" src="https://img.shields.io/badge/built%20with-Vue%203%20%C2%B7%20xterm.js%20%C2%B7%20node--pty-E07A5F">
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-22C55E">
 </p>
 
 Claude Code 自带后台会话（`claude --bg`），终端关了也不会退出。cc-monitor 接上这些会话，把画面复制到手机和电脑上的多个页面，把你在页面上输入的内容送回会话。所有数据只在你的局域网内流动，不经过任何外部服务器。
@@ -89,3 +90,7 @@ npm run it:attach -w server   # 真实会话集成验证，会起一个 ccm-it �
 ```
 
 目录结构：`server/` 服务端（attach 管理、转录尾随、会话注册表、HTTP 与 WebSocket），`web/` 手机页面（Vue 3 + xterm.js），`cli/` 本地薄客户端，`docs/` 使用手册与设计文档。
+
+## 许可证
+
+[MIT](LICENSE)

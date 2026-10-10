@@ -10,9 +10,10 @@ const { terms, FakeTerm } = vi.hoisted(() => {
     resetCount = 0;
     dataCb: ((d: string) => void) | null = null;
     textarea = document.createElement('textarea');
+    element = document.createElement('div');
     constructor() { terms.push(this); }
     loadAddon() {}
-    open(el: HTMLElement) { el.appendChild(this.textarea); }
+    open(el: HTMLElement) { el.appendChild(this.element); this.element.appendChild(this.textarea); }
     write(d: string) { this.written.push(d); }
     reset() { this.resetCount += 1; }
     onData(cb: (d: string) => void) { this.dataCb = cb; }
@@ -41,6 +42,21 @@ describe('TerminalPane', () => {
     t.textarea.dispatchEvent(new Event('focus'));
     expect(w.emitted('active')).toHaveLength(1);
   });
+  it('turns a vertical touch drag into wheel events so phones can scroll the TUI', async () => {
+    const w = mount(TerminalPane, { props: { minCols: 80 } });
+    const t = terms.at(-1)!;
+    const deltas: number[] = [];
+    t.element.addEventListener('wheel', (e) => deltas.push((e as WheelEvent).deltaY));
+    const host = w.find('.term');
+    const touch = (type: string, y: number) => host.element.dispatchEvent(new TouchEvent(type, { touches: [{ clientY: y, clientX: 10 } as Touch], bubbles: true, cancelable: true }));
+    touch('touchstart', 200);
+    touch('touchmove', 140); // 手指上滑 60px：内容向下滚
+    touch('touchmove', 260); // 再下滑 120px
+    expect(deltas.length).toBeGreaterThanOrEqual(2);
+    expect(deltas[0]).toBeGreaterThan(0);
+    expect(deltas[deltas.length - 1]).toBeLessThan(0);
+  });
+
   it('emits resize after fitting and warns when narrower than minCols', async () => {
     const w = mount(TerminalPane, { props: { minCols: 80 } });
     (w.vm as unknown as { refit: () => void }).refit();
